@@ -115,6 +115,12 @@ def create_order_in_db(payload):
         # customer = cur.fetchone()
         # if not customer:
         #     raise ValueError(f"Customer {customer_id} not found")
+        customer = conn.execute(
+            "SELECT customer_id FROM customers WHERE customer_id = ? AND is_active = 1",
+            (customer_id,),
+        ).fetchone()
+        if not customer:
+            raise ValueError(f"Customer {customer_id} not found or is inactive")
 
         lines = payload.get('lines', [])
         if not lines:
@@ -133,31 +139,88 @@ def create_order_in_db(payload):
         # prepared_lines = []
         # for i, line in enumerate(lines):
         #     ...
+        subtotal = 0.0
+        prepared_lines = []
+        for i, line in enumerate(lines):
+            item = conn.execute(
+                "SELECT item_id FROM inventory WHERE item_id = ?", (line['item_id'],)
+            ).fetchone()
+            if not item:
+                raise ValueError(f"Item {line['item_id']} not found")
+
+            line_total = line['qty_ordered'] * line['unit_price'] * (1 - line['discount_pct'] / 100.0)
+            subtotal += line_total
+            prepared_lines.append({
+                'line_number':  i + 1,
+                'item_id':      line['item_id'],
+                'qty_ordered':  line['qty_ordered'],
+                'unit_price':   line['unit_price'],
+                'discount_pct': line['discount_pct'],
+                'line_total':   round(line_total, 2),
+            })
 
         # TODO: calculate tax, freight, total
         # tax_amount     = round(subtotal * 0.08, 2)
         # freight_amount = 25.00
         # total_amount   = round(subtotal + tax_amount + freight_amount, 2)
+        tax_amount = round(subtotal * 0.08, 2)
+        freight_amount = 25.00
+        total_amount = round(subtotal + tax_amount + freight_amount, 2)
 
         # TODO: get next order number
         # order_number = _get_next_order_number(conn)
+        order_number = _get_next_order_number(conn)
+        order_date = datetime.date.today().isoformat()
 
         # TODO: insert into orders table
         # cur = conn.execute("INSERT INTO orders (...) VALUES (...)", (...))
         # order_id = cur.lastrowid
+        cur = conn.execute(
+            "INSERT INTO orders "
+            "(order_number, customer_id, order_date, required_date, status, "
+            " ship_addr1, ship_city, ship_state, ship_zip, "
+            " subtotal, tax_amount, freight_amount, total_amount, "
+            " notes, entered_by, customer_po) "
+            "VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                order_number, customer_id, order_date, payload['required_date'],
+                payload['ship_addr1'], payload['ship_city'], payload['ship_state'], payload['ship_zip'],
+                round(subtotal, 2), tax_amount, freight_amount, total_amount,
+                payload['notes'], payload['entered_by'], payload['customer_po'],
+            ),
+        )
+        order_id = cur.lastrowid
 
         # TODO: insert order lines
         # for line in prepared_lines:
         #     conn.execute("INSERT INTO order_lines (...) VALUES (...)", (...))
+        for line in prepared_lines:
+            conn.execute(
+                "INSERT INTO order_lines "
+                "(order_id, line_number, item_id, qty_ordered, qty_shipped, "
+                " unit_price, discount_pct, line_total) "
+                "VALUES (?, ?, ?, ?, 0.0, ?, ?, ?)",
+                (
+                    order_id, line['line_number'], line['item_id'],
+                    line['qty_ordered'], line['unit_price'],
+                    line['discount_pct'], line['line_total'],
+                ),
+            )
+            conn.execute(
+                "UPDATE inventory SET qty_reserved = qty_reserved + ? WHERE item_id = ?",
+                (line['qty_ordered'], line['item_id']),
+            )
 
         # TODO: commit
         # conn.commit()
+        conn.commit()
 
         # TODO: return actual values
-        raise NotImplementedError(
-            "create_order_in_db() is not yet implemented. "
-            "This is the exercise: implement this function."
-        )
+        # raise NotImplementedError(
+        #     "create_order_in_db() is not yet implemented. "
+        #     "This is the exercise: implement this function."
+        # )
+        return order_id, order_number
 
     finally:
         conn.close()
