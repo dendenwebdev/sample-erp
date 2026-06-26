@@ -7,6 +7,7 @@ It mimics the behaviour of a 2-tier desktop ERP: no web layer,
 the application connects directly to the SQLite database.
 
 The code deliberately mirrors what 25-year-old C++ looks like:
+test
 - No abstraction beyond db.py (which is itself messy)
 - UI logic and business decisions mixed together
 - Input validation done inline with print statements
