@@ -7,10 +7,10 @@ the legacy ERP domain by domain.
 
 ## What has been strangled
 
-### Orders domain — `orders_api.py` (IN PROGRESS — workshop exercise)
+### Orders domain — `orders_api.py` (COMPLETE)
 
-**Status:** Stub exists. Exercise participants implement `POST /orders` and update the
-legacy app to call it.
+**Status:** `POST /orders` is implemented and `legacy/app.py` routes order creation
+through the API.  Test ran with orders_api.py running (order saved) and stopped (order did not save).
 
 **What the facade intercepts:** Order creation (`POST /orders`).
 
@@ -62,6 +62,42 @@ The team chose Orders before Inventory before Customers based on dependency anal
    The Orders service depends on Customers and Inventory for reads only — no write coupling.
 
 2. **Inventory** comes second. Once Orders is live, inventory reservation can be unified
+   in the Inventory service. The Orders service will call the Inventory service to reserve
+   rather than writing directly to the inventory table.
+
+3. **Customers** comes last because it is referenced by almost every other domain.
+   Extracting it last means the API contract stabilises after the consuming domains are settled.
+
+---
+
+## Running what's here
+
+```bash
+# Start the Orders API
+python3 strangled/orders_api.py
+
+# In another terminal, verify it's up
+curl http://localhost:8001/health
+
+# Run the legacy app (it will call the API for order creation after the exercise)
+python3 legacy/app.py
+```
+
+---
+
+## Known issues and deliberate omissions
+
+- **Authentication:** None. The C++ app was single-user and LAN-only. Auth will be added
+  when the Next.js frontend is introduced.
+- **Transactions across services:** When the Orders API creates an order and the legacy
+  app's inventory reservation fails (or vice versa), the two writes are not in the same
+  transaction. This is the "distributed transaction" problem. For the workshop, it is
+  intentionally left unresolved — it's a real problem you'll face in the migration.
+- **Order number collisions:** The order number generation in `orders_api.py` uses the
+  same `COUNT(*)` approach as `legacy/db.py`. In production, use a database sequence or
+  a dedicated number table with row-level locking.
+- **No HTTPS:** The API runs on plain HTTP. Production deployment will terminate TLS
+  at the load balancer.
    in the Inventory service. The Orders service will call the Inventory service to reserve
    rather than writing directly to the inventory table.
 
